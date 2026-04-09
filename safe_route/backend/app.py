@@ -5,6 +5,9 @@ import time
 from datetime import datetime
 from model import get_model
 
+from risk_model.grid import generate_grid
+from risk_model.risk_calc import calculate_risk
+
 app = FastAPI()
 
 def time_risk_factor(hour: int) -> float:
@@ -57,6 +60,33 @@ def geocode(location):
     return point["lat"], point["lng"]
 
 
+# ============================
+# ✅ NEW: RISK HEATMAP API
+# ============================
+@app.get("/risk-map")
+def risk_map(hour: int = None):
+    """
+    Returns grid with risk values for heatmap visualization
+    """
+    if hour is None:
+        hour = datetime.now().hour
+
+    grid = generate_grid()
+
+    for cell in grid:
+        base_risk = calculate_risk(cell)
+
+        # apply time factor
+        adjusted_risk = base_risk * time_risk_factor(hour)
+
+        cell["risk"] = round(min(adjusted_risk, 1.0), 3)
+
+    return {"data": grid}
+
+
+# ============================
+# EXISTING ROUTE API (UNCHANGED)
+# ============================
 @app.get("/routes")
 def get_routes(source: str = Query(...), destination: str = Query(...), hour: int = None):
     """
@@ -84,7 +114,7 @@ def get_routes(source: str = Query(...), destination: str = Query(...), hour: in
         "key": GRAPHHOPPER_API_KEY,
         "locale": "en",
         "instructions": "false",
-        "alternative_route.max_paths": 3  # up to 3 alternative routes
+        "alternative_route.max_paths": 3
     }
 
     r = requests.get(GH_ROUTE_URL, params=params, timeout=15)
@@ -97,7 +127,7 @@ def get_routes(source: str = Query(...), destination: str = Query(...), hour: in
 
     for i, path in enumerate(gh_data.get("paths", [])):
         distance_m = path.get("distance", 0)
-        duration_s = path.get("time", 0) / 1000  # milliseconds → seconds
+        duration_s = path.get("time", 0) / 1000
         coords = path.get("points", {}).get("coordinates", [])
 
         if not coords:
@@ -106,16 +136,14 @@ def get_routes(source: str = Query(...), destination: str = Query(...), hour: in
         start_city = source
         end_city = destination
 
-        # Compute safety score using your model
+        # Model-based risk
         r1 = safety_model.get_risk(start_city, hour)
         r2 = safety_model.get_risk(end_city, hour)
-        # Apply time-based adjustment
+
         time_factor = time_risk_factor(hour)
         adjusted_score = (r1 + r2) / 2.0 * time_factor
         safety_score = round(min(adjusted_score, 1.0), 3)
 
-
-        # Convert to [lat, lon] for frontend
         latlngs = [[lat, lon] for lon, lat in coords]
 
         routes.append({
