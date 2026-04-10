@@ -65,9 +65,8 @@ def geocode(location):
 # ============================
 @app.get("/risk-map")
 def risk_map(hour: int = None):
-    """
-    Returns grid with risk values for heatmap visualization
-    """
+    from datetime import datetime
+
     if hour is None:
         hour = datetime.now().hour
 
@@ -75,11 +74,14 @@ def risk_map(hour: int = None):
 
     for cell in grid:
         base_risk = calculate_risk(cell)
-
-        # apply time factor
         adjusted_risk = base_risk * time_risk_factor(hour)
 
-        cell["risk"] = round(min(adjusted_risk, 1.0), 3)
+        risk_value = round(min(adjusted_risk, 1.0), 3)
+
+        cell["risk"] = risk_value
+
+        # 🔥 NEW: hotspot flag
+        cell["is_hotspot"] = risk_value > 0.7
 
     return {"data": grid}
 
