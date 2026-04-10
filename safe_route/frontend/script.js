@@ -8,8 +8,27 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 
 let routeLayers = [];
 let heatLayer = null;
+let hotspotMarkers = [];
 
-// 🔥 Load Heatmap
+// 🔥 Dummy Criminal Profiles
+function generateDummyProfiles() {
+  const crimes = ["Theft", "Robbery", "Assault", "Fraud", "Harassment"];
+  const names = ["Ravi Shankar", "Amit Rajan", "Sameer Ibrahim", "Rajesh Patel", "Imran Mahood", "Mohmd Shaikh"];
+
+  let profiles = [];
+
+  for (let i = 0; i < 3; i++) {
+    profiles.push({
+      name: names[Math.floor(Math.random() * names.length)],
+      crime: crimes[Math.floor(Math.random() * crimes.length)],
+      risk: (Math.random() * 1).toFixed(2)
+    });
+  }
+
+  return profiles;
+}
+
+// 🔥 Load Heatmap + Hotspots
 async function loadHeatmap(hour = null) {
   try {
     let url = "http://127.0.0.1:8000/risk-map";
@@ -18,19 +37,26 @@ async function loadHeatmap(hour = null) {
     const response = await fetch(url);
     const data = await response.json();
 
+    // 🔥 Heatmap points
     const points = data.data.map(cell => [
       cell.lat,
       cell.lon,
       cell.risk * (1 + Math.random())
     ]);
 
+    // Remove old heatmap
     if (heatLayer) {
       map.removeLayer(heatLayer);
     }
 
+    // Remove old markers
+    hotspotMarkers.forEach(m => map.removeLayer(m));
+    hotspotMarkers = [];
+
+    // 🔥 Create heatmap
     heatLayer = L.heatLayer(points, {
       radius: 25,
-      blur: 15,
+      blur: 18,
       maxZoom: 17,
       max: 1.2,
       gradient: {
@@ -41,6 +67,35 @@ async function loadHeatmap(hour = null) {
         1.0: "darkred"
       }
     }).addTo(map);
+
+    // 🔥 Add clickable hotspot markers
+    data.data.forEach(cell => {
+      if (cell.is_hotspot) {
+        const profiles = generateDummyProfiles();
+
+        let popupContent = `
+          <div style="font-family:sans-serif">
+            <h4 style="color:red;">⚠️ High Risk Zone</h4>
+            ${profiles.map(p => `
+              <div style="margin-bottom:6px;">
+                <b>${p.name}</b><br>
+                ${p.crime} | Risk: ${p.risk}
+              </div>
+            `).join("")}
+          </div>
+        `;
+
+        const marker = L.circleMarker([cell.lat, cell.lon], {
+          radius: 6,
+          color: "red",
+          fillOpacity: 0.4
+        }).addTo(map);
+
+        marker.bindPopup(popupContent);
+
+        hotspotMarkers.push(marker);
+      }
+    });
 
   } catch (error) {
     console.error("Error loading heatmap:", error);
@@ -123,8 +178,6 @@ document.getElementById("findRoute").addEventListener("click", () => {
   }
 
   fetchRoutes(source, destination, hour);
-
-  // 🔥 update heatmap with time
   loadHeatmap(hour);
 });
 
